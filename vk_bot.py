@@ -27,13 +27,16 @@ def new_question(event, vk_api, keyboard, data, redis) -> None:
     )
 
 
-def check_answer(event, vk_api, keyboard, data, redis) -> None:
+def check_answer(event, vk_api, keyboard, data, redis, score) -> None:
     question = redis.get(event.user_id).decode('utf-8', 'ignore')
 
     answer_long = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
     answer_short = re.sub("[\(\[].*?[\)\]]", "", data[question])
 
     if answer_long.lower() == event.text.lower() or answer_short.lower() == event.text.lower():
+
+        score += 1
+
         vk_api.messages.send(
             user_id=event.user_id,
             keyboard=keyboard.get_keyboard(),
@@ -47,6 +50,8 @@ def check_answer(event, vk_api, keyboard, data, redis) -> None:
             message='Неправильно! Думай дальше',
             random_id=0,
         )
+
+    return score
 
 
 def send_answer(event, vk_api, keyboard, data, redis) -> None:
@@ -66,6 +71,15 @@ def send_answer(event, vk_api, keyboard, data, redis) -> None:
         user_id=event.user_id,
         keyboard=keyboard.get_keyboard(),
         message=question,
+        random_id=0,
+    )
+
+
+def show_score(event, vk_api, keyboard, score):
+    vk_api.messages.send(
+        user_id=event.user_id,
+        keyboard=keyboard.get_keyboard(),
+        message=str(score),
         random_id=0,
     )
 
@@ -95,9 +109,11 @@ def main() -> None:
     keyboard.add_button('Новый вопрос', color=VkKeyboardColor.POSITIVE)
     keyboard.add_button('Сдаться', color=VkKeyboardColor.NEGATIVE)
     keyboard.add_line()
-    keyboard.add_button('Сдаться', color=VkKeyboardColor.PRIMARY)
+    keyboard.add_button('Мой счет', color=VkKeyboardColor.PRIMARY)
 
     longpoll = VkLongPoll(vk_session)
+
+    score = 0
 
     while True:
         try:
@@ -105,10 +121,12 @@ def main() -> None:
                 if event.type == VkEventType.MESSAGE_NEW and event.to_me:
                     if event.text == 'Новый вопрос':
                         new_question(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard)
-                    if event.text == 'Сдаться':
+                    elif event.text == 'Сдаться':
                         send_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard)
+                    elif event.text == 'Мой счет':
+                        show_score(event=event, vk_api=vk_api, keyboard=keyboard, score=score)
                     else:
-                        check_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard)
+                        score = check_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard, score=score)
 
         except requests.exceptions.ConnectionError as err:
             logger.warning('Боту прилетело:')

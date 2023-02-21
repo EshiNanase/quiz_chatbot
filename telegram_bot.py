@@ -17,6 +17,8 @@ QUESTION, ANSWER = range(2)
 
 
 def start(update: Update, context: CallbackContext) -> None:
+    score = 0
+    context.user_data['score'] = score
 
     keyboard = [['Новый вопрос', 'Сдаться'],
                 ['Мой счет']]
@@ -46,6 +48,8 @@ def check_answer(update: Update, context: CallbackContext, data, redis) -> None:
     answer_short = re.sub("[\(\[].*?[\)\]]", "", data[question])
 
     if answer_long.lower() == update.message.text.lower() or answer_short.lower() == update.message.text.lower():
+
+        context.user_data['score'] += 1
         update.message.reply_text('Правильно, жми Новый вопрос для нового вопроса')
         return QUESTION
     else:
@@ -64,6 +68,11 @@ def concede(update: Update, context: CallbackContext, data, redis) -> None:
     update.message.reply_text(question)                                          
 
     return ANSWER
+
+
+def show_score(update: Update, context: CallbackContext) -> None:
+    score = context.user_data['score']
+    update.message.reply_text(score)
 
 
 def cancel(update: Update, context: CallbackContext,):
@@ -94,9 +103,11 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            QUESTION: [MessageHandler(Filters.regex('Новый вопрос'), new_question_data)],
+            QUESTION: [MessageHandler(Filters.regex('Новый вопрос'), new_question_data),
+                       MessageHandler(Filters.regex('Мой счет'), show_score)],
             ANSWER: [MessageHandler(Filters.regex('Сдаться'), concede_data),
-                     MessageHandler(Filters.text & ~Filters.command, check_answer_data)
+                     MessageHandler(Filters.regex('Мой счет'), show_score),
+                     MessageHandler(Filters.text & ~Filters.command, check_answer_data),
                      ],
             
         },
