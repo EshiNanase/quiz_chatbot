@@ -1,3 +1,4 @@
+import os
 import random
 
 
@@ -24,14 +25,14 @@ def create_data(file):
 
 def write_data():
     data = create_data('zvonok17.txt')
-    filename = 'quiz-questions.txt'
+    filename = 'quiz_questions.txt'
     with open(filename, 'a', encoding='utf-8') as file:
         for question, answer in data.items():
             file.write(f'{question}---{answer}\n')
 
 
 def read_data():
-    filename = 'quiz-questions.txt'
+    filename = os.environ['PATH_TXT']
     with open(filename, 'r', encoding='utf-8') as file:
         data = file.readlines()
 

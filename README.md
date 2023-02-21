@@ -40,6 +40,7 @@ VK_TOKEN = token of your VK group, follow these instructions to create https://h
 REDIS_HOST = host of you redis db, you'll get it once you create redis db
 REDIS_PORT = port of you redis db, you'll get it once you create redis db
 REDIS_PASSWORD = password of you redis db, you need to create redis db and remember the password
+PATH_TXT = path for your questions file, should be in txt with architecture like this: question---answer\n
 ```
 ## Running
 
