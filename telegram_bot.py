@@ -8,8 +8,8 @@ from functools import partial
 import os
 import dotenv
 from logger import ChatbotLogsHandler
-
-from quiz_base import send_question, read_data
+import random
+from quiz_base import read_data
 
 
 logger = logging.getLogger(__file__)
@@ -34,7 +34,8 @@ def start(update: Update, context: CallbackContext) -> None:
     
 
 def new_question(update: Update, context: CallbackContext, data, redis) -> None:
-    question = send_question(data)
+    question = random.choice(list(data.keys()))
+
     redis.set(update.message.from_user['id'], question)
     update.message.reply_text(question)
 
@@ -45,7 +46,7 @@ def check_answer(update: Update, context: CallbackContext, data, redis) -> None:
     question = redis.get(update.message.from_user['id']).decode('utf-8', 'ignore')
 
     answer_long = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
-    answer_short = re.sub("[\(\[].*?[\)\]]", "", data[question])
+    answer_short = re.sub(r"[\(\[].*?[\)\]]", "", data[question])
 
     if answer_long.lower() == update.message.text.lower() or answer_short.lower() == update.message.text.lower():
 
@@ -63,7 +64,7 @@ def concede(update: Update, context: CallbackContext, data, redis) -> None:
     answer = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
     update.message.reply_text(answer)
 
-    question = send_question(data)
+    question = random.choice(list(data.keys()))
     redis.set(update.message.from_user['id'], question)
     update.message.reply_text(question)                                          
 

@@ -6,17 +6,29 @@ import logging
 import time
 import redis as r
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-from quiz_base import read_data, send_question
+from quiz_base import read_data
 import requests
 import re
 from logger import ChatbotLogsHandler
+import random
 
 
 logger = logging.getLogger(__file__)
 
 
+def start(event, vk_api, keyboard, players):
+    players[event.user_id] = 0
+    vk_api.messages.send(
+        user_id=event.user_id,
+        keyboard=keyboard.get_keyboard(),
+        message='Привет! Я викториновый бот, жми "Новый вопрос"',
+        random_id=0,
+    )
+    return players
+
+
 def new_question(event, vk_api, keyboard, data, redis) -> None:
-    question = send_question(data)
+    question = random.choice(list(data.keys()))
     redis.set(event.user_id, question)
 
     vk_api.messages.send(
@@ -27,15 +39,15 @@ def new_question(event, vk_api, keyboard, data, redis) -> None:
     )
 
 
-def check_answer(event, vk_api, keyboard, data, redis, score) -> None:
+def check_answer(event, vk_api, keyboard, data, redis, players) -> None:
     question = redis.get(event.user_id).decode('utf-8', 'ignore')
 
     answer_long = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
-    answer_short = re.sub("[\(\[].*?[\)\]]", "", data[question])
+    answer_short = re.sub(r"[\(\[].*?[\)\]]", "", data[question])
 
     if answer_long.lower() == event.text.lower() or answer_short.lower() == event.text.lower():
 
-        score += 1
+        players[event.user_id] += 1
 
         vk_api.messages.send(
             user_id=event.user_id,
@@ -51,7 +63,7 @@ def check_answer(event, vk_api, keyboard, data, redis, score) -> None:
             random_id=0,
         )
 
-    return score
+    return players
 
 
 def send_answer(event, vk_api, keyboard, data, redis) -> None:
@@ -64,7 +76,7 @@ def send_answer(event, vk_api, keyboard, data, redis) -> None:
         random_id=0,
     )
 
-    question = send_question(data)
+    question = random.choice(list(data.keys()))
     redis.set(event.user_id, question)
 
     vk_api.messages.send(
@@ -75,11 +87,11 @@ def send_answer(event, vk_api, keyboard, data, redis) -> None:
     )
 
 
-def show_score(event, vk_api, keyboard, score):
+def show_score(event, vk_api, keyboard, players):
     vk_api.messages.send(
         user_id=event.user_id,
         keyboard=keyboard.get_keyboard(),
-        message=str(score),
+        message=str(players[event.user_id]),
         random_id=0,
     )
 
@@ -113,7 +125,7 @@ def main() -> None:
 
     longpoll = VkLongPoll(vk_session)
 
-    score = 0
+    players = {}
 
     while True:
         try:
@@ -121,12 +133,14 @@ def main() -> None:
                 if event.type == VkEventType.MESSAGE_NEW and event.to_me:
                     if event.text == 'Новый вопрос':
                         new_question(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard)
+                    elif event.text == 'Начать':
+                        players = start(event=event, vk_api=vk_api, players=players, keyboard=keyboard)
                     elif event.text == 'Сдаться':
                         send_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard)
                     elif event.text == 'Мой счет':
-                        show_score(event=event, vk_api=vk_api, keyboard=keyboard, score=score)
+                        show_score(event=event, vk_api=vk_api, keyboard=keyboard, players=players)
                     else:
-                        score = check_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard, score=score)
+                        players = check_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard, players=players)
 
         except requests.exceptions.ConnectionError as err:
             logger.warning('Боту прилетело:')
