@@ -11,25 +11,31 @@ import requests
 import re
 from logger import ChatbotLogsHandler
 import random
+import json
 
 
 logger = logging.getLogger(__file__)
 
 
-def start(event, vk_api, keyboard, players):
-    players[event.user_id] = 0
+def start(event, vk_api, keyboard, redis):
+    redis_data = {'question': 0, 'score': 0}
+    redis.set(event.user_id, json.dumps(redis_data))
+
     vk_api.messages.send(
         user_id=event.user_id,
         keyboard=keyboard.get_keyboard(),
         message='Привет! Я викториновый бот, жми "Новый вопрос"',
         random_id=0,
     )
-    return players
 
 
-def new_question(event, vk_api, keyboard, data, redis) -> None:
-    question = random.choice(list(data.keys()))
-    redis.set(event.user_id, question)
+def new_question(event, vk_api, keyboard, question_base, redis) -> None:
+    question = random.choice(list(question_base.keys()))
+    if not redis.get(event.user_id):
+        redis_data = {'question': question, 'score': 0}
+    else:
+        redis_data = {'question': question, 'score': json.loads(redis.get(event.user_id))['score']}
+    redis.set(event.user_id, json.dumps(redis_data))
 
     vk_api.messages.send(
         user_id=event.user_id,
@@ -39,15 +45,20 @@ def new_question(event, vk_api, keyboard, data, redis) -> None:
     )
 
 
-def check_answer(event, vk_api, keyboard, data, redis, players) -> None:
-    question = redis.get(event.user_id).decode('utf-8', 'ignore')
+def check_answer(event, vk_api, keyboard, question_base, redis) -> None:
+    redis_data = json.loads(redis.get(event.user_id))
+    question = redis_data['question']
+    score = redis_data['score']
+    # decode('utf-8', 'ignore')
 
-    answer_long = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
-    answer_short = re.sub(r"[\(\[].*?[\)\]]", "", data[question])
+    answer_long = ''.join([letter for letter in question_base[question] if letter != '[' and letter != ']'])
+    answer_short = re.sub(r"[\(\[].*?[\)\]]", "", question_base[question])
 
     if answer_long.lower() == event.text.lower() or answer_short.lower() == event.text.lower():
 
-        players[event.user_id] += 1
+        score += 1
+        redis_data = {'question': question, 'score': score}
+        redis.set(event.user_id, json.dumps(redis_data))
 
         vk_api.messages.send(
             user_id=event.user_id,
@@ -63,12 +74,11 @@ def check_answer(event, vk_api, keyboard, data, redis, players) -> None:
             random_id=0,
         )
 
-    return players
 
-
-def send_answer(event, vk_api, keyboard, data, redis) -> None:
-    question = redis.get(event.user_id).decode('utf-8', 'ignore')
-    answer = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
+def send_answer(event, vk_api, keyboard, question_base, redis) -> None:
+    redis_data = json.loads(redis.get(event.user_id))
+    question = redis_data['question']
+    answer = ''.join([letter for letter in question_base[question] if letter != '[' and letter != ']'])
     vk_api.messages.send(
         user_id=event.user_id,
         keyboard=keyboard.get_keyboard(),
@@ -76,8 +86,9 @@ def send_answer(event, vk_api, keyboard, data, redis) -> None:
         random_id=0,
     )
 
-    question = random.choice(list(data.keys()))
-    redis.set(event.user_id, question)
+    question = random.choice(list(question_base.keys()))
+    redis_data['question'] = question
+    redis.set(event.user_id, json.dumps(redis_data))
 
     vk_api.messages.send(
         user_id=event.user_id,
@@ -87,11 +98,13 @@ def send_answer(event, vk_api, keyboard, data, redis) -> None:
     )
 
 
-def show_score(event, vk_api, keyboard, players):
+def show_score(event, vk_api, keyboard, redis):
+    redis_data = json.loads(redis.get(event.user_id))
+    score = redis_data['score']
     vk_api.messages.send(
         user_id=event.user_id,
         keyboard=keyboard.get_keyboard(),
-        message=str(players[event.user_id]),
+        message=str(score),
         random_id=0,
     )
 
@@ -105,13 +118,14 @@ def main() -> None:
     redis_host = os.environ['REDIS_HOST']
     redis_port = int(os.environ['REDIS_PORT'])
     redis_password = os.environ['REDIS_PASSWORD']
+    filename = os.environ['PATH_TXT']
 
     logging.basicConfig(level=logging.WARNING)
     logger.addHandler(ChatbotLogsHandler(telegram_chat_id, telegram_token))
 
     redis = r.Redis(host=redis_host, port=redis_port, password=redis_password)
 
-    data = read_data()
+    question_base = read_data(filename)
 
     vk_session = vk.VkApi(token=vk_token)
     vk_api = vk_session.get_api()
@@ -125,22 +139,20 @@ def main() -> None:
 
     longpoll = VkLongPoll(vk_session)
 
-    players = {}
-
     while True:
         try:
             for event in longpoll.listen():
                 if event.type == VkEventType.MESSAGE_NEW and event.to_me:
                     if event.text == 'Новый вопрос':
-                        new_question(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard)
+                        new_question(event=event, vk_api=vk_api, question_base=question_base, redis=redis, keyboard=keyboard)
                     elif event.text == 'Начать':
-                        players = start(event=event, vk_api=vk_api, players=players, keyboard=keyboard)
+                        start(event=event, vk_api=vk_api, keyboard=keyboard, redis=redis)
                     elif event.text == 'Сдаться':
-                        send_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard)
+                        send_answer(event=event, vk_api=vk_api, question_base=question_base, redis=redis, keyboard=keyboard)
                     elif event.text == 'Мой счет':
-                        show_score(event=event, vk_api=vk_api, keyboard=keyboard, players=players)
+                        show_score(event=event, vk_api=vk_api, keyboard=keyboard, redis=redis)
                     else:
-                        players = check_answer(event=event, vk_api=vk_api, data=data, redis=redis, keyboard=keyboard, players=players)
+                        check_answer(event=event, vk_api=vk_api, question_base=question_base, redis=redis, keyboard=keyboard)
 
         except requests.exceptions.ConnectionError as err:
             logger.warning('Боту прилетело:')

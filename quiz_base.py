@@ -1,17 +1,14 @@
-import os
 import re
 
 
-def read_data():
+def read_data(filename):
 
-    filename = os.environ['PATH_TXT']
     with open(filename, 'r', encoding='koi8-r') as file:
         data = file.readlines()
 
     questions = {}
-    for i, j in enumerate(data):
-        if 'Вопрос' in data[i]:
-            index = i
+    for index, phrase in enumerate(data):
+        if 'Вопрос' in phrase:
             question = data[index + 1]
             while 'Комментарий' not in question:
                 index += 1

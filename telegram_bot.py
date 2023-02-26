@@ -33,8 +33,8 @@ def start(update: Update, context: CallbackContext) -> None:
     return QUESTION
     
 
-def new_question(update: Update, context: CallbackContext, data, redis) -> None:
-    question = random.choice(list(data.keys()))
+def new_question(update: Update, context: CallbackContext, question_base, redis) -> None:
+    question = random.choice(list(question_base.keys()))
 
     redis.set(update.message.from_user['id'], question)
     update.message.reply_text(question)
@@ -42,11 +42,11 @@ def new_question(update: Update, context: CallbackContext, data, redis) -> None:
     return ANSWER
 
 
-def check_answer(update: Update, context: CallbackContext, data, redis) -> None:
+def check_answer(update: Update, context: CallbackContext, question_base, redis) -> None:
     question = redis.get(update.message.from_user['id']).decode('utf-8', 'ignore')
 
-    answer_long = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
-    answer_short = re.sub(r"[\(\[].*?[\)\]]", "", data[question])
+    answer_long = ''.join([letter for letter in question_base[question] if letter != '[' and letter != ']'])
+    answer_short = re.sub(r"[\(\[].*?[\)\]]", "", question_base[question])
 
     if answer_long.lower() == update.message.text.lower() or answer_short.lower() == update.message.text.lower():
 
@@ -58,13 +58,13 @@ def check_answer(update: Update, context: CallbackContext, data, redis) -> None:
         return ANSWER
 
 
-def concede(update: Update, context: CallbackContext, data, redis) -> None:
+def concede(update: Update, context: CallbackContext, question_base, redis) -> None:
 
     question = redis.get(update.message.from_user['id']).decode('utf-8', 'ignore')
-    answer = ''.join([letter for letter in data[question] if letter != '[' and letter != ']'])
+    answer = ''.join([letter for letter in question_base[question] if letter != '[' and letter != ']'])
     update.message.reply_text(answer)
 
-    question = random.choice(list(data.keys()))
+    question = random.choice(list(question_base.keys()))
     redis.set(update.message.from_user['id'], question)
     update.message.reply_text(question)                                          
 
@@ -90,16 +90,17 @@ def main() -> None:
     redis_host = os.environ['REDIS_HOST']
     redis_port = int(os.environ['REDIS_PORT'])
     redis_password = os.environ['REDIS_PASSWORD']
+    filename = os.environ['PATH_TXT']
 
     logging.basicConfig(level=logging.WARNING)
     logger.addHandler(ChatbotLogsHandler(telegram_chat_id, telegram_token))
 
     redis = r.Redis(host=redis_host, port=redis_port, password=redis_password)
 
-    data = read_data()
-    new_question_data = partial(new_question, data=data, redis=redis)
-    check_answer_data = partial(check_answer, data=data, redis=redis)
-    concede_data = partial(concede, data=data, redis=redis)
+    question_base = read_data(filename)
+    new_question_data = partial(new_question, question_base=question_base, redis=redis)
+    check_answer_data = partial(check_answer, question_base=question_base, redis=redis)
+    concede_data = partial(concede, question_base=question_base, redis=redis)
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
